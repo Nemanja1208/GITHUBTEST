@@ -1,0 +1,57 @@
+# .github/workflows/pr-check.yml
+# Runs on every PR to main: restore -> format check -> build -> test.
+# Make "Build & Check" a required status check so nothing broken gets merged.
+
+name: PR Check
+
+on:
+  pull_request:
+    branches: [development]
+  workflow_dispatch: # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: read
+
+# New pushes to the same PR cancel the previous run (saves minutes)
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Match <TargetFramework> in your .csproj: net8.0 -> 8.0.x, net9.0 -> 9.0.x, net10.0 -> 10.0.x
+  DOTNET_VERSION: '10.0.x'
+  # Path to your .sln / .slnx (or a single .csproj) relative to repo root
+  SOLUTION: 'GITHUBTEST.sln'
+  # Flip to 'true' once the codebase is warning-free to enforce a strict build
+  WARNINGS_AS_ERRORS: 'false'
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build:
+    name: Build & Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore "$SOLUTION"
+
+      - name: Check formatting
+        run: dotnet format "$SOLUTION" --verify-no-changes --no-restore --verbosity minimal
+
+      - name: Build
+        run: >
+          dotnet build "$SOLUTION"
+          --configuration Release
+          --no-restore
+          -p:TreatWarningsAsErrors=$WARNINGS_AS_ERRORS
